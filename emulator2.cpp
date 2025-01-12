@@ -15,9 +15,6 @@ std::unordered_map<SDL_Keycode, uint8_t> key_map = {
     {SDLK_a, 0x61}, {SDLK_b, 0x62}, {SDLK_c, 0x63}, {SDLK_d, 0x64}, {SDLK_e, 0x65}, {SDLK_f, 0x66}, {SDLK_g, 0x67}, {SDLK_h, 0x68}, {SDLK_i, 0x69}, {SDLK_j, 0x6A}, {SDLK_k, 0x6B}, {SDLK_l, 0x6C}, {SDLK_m, 0x6D}, {SDLK_n, 0x6E}, {SDLK_o, 0x6F}, {SDLK_p, 0x70}, {SDLK_q, 0x71}, {SDLK_r, 0x72}, {SDLK_s, 0x73}, {SDLK_t, 0x74}, {SDLK_u, 0x75}, {SDLK_v, 0x76}, {SDLK_w, 0x77}, {SDLK_x, 0x78}, {SDLK_y, 0x79}, {SDLK_z, 0x7A}, {SDLK_1, 0x31}, {SDLK_2, 0x32}, {SDLK_3, 0x33}, {SDLK_4, 0x34}, {SDLK_5, 0x35}, {SDLK_6, 0x36}, {SDLK_7, 0x37}, {SDLK_8, 0x38}, {SDLK_9, 0x39}, {SDLK_0, 0x30}, {SDLK_RETURN, 0x0D}, {SDLK_SPACE, 0x20}, // Dodati specijalni tasteri
 };
 
-// Globalni I/O portovi
-uint8_t io_ports[0xFFFF] = {0};
-
 void generate_test_files();
 
 class Emulator
@@ -145,7 +142,6 @@ private:
                 if (key_map.find(event.key.keysym.sym) != key_map.end())
                 {
                     uint8_t ascii_code = key_map[event.key.keysym.sym];
-                    io_ports[0xFFFF] = ascii_code;
                     video_memory[0] = ascii_code; // Prikaz na prvoj poziciji video memorije
                     std::cout << "Key pressed: " << SDL_GetKeyName(event.key.keysym.sym)
                               << " (ASCII: " << ascii_code << ")" << std::endl;
@@ -344,26 +340,57 @@ private:
 
     void handle_io_ports()
     {
-        if (disk_command == 1)
-        { // Read
-            std::ifstream disk_stream(disk_file, std::ios::binary);
-            if (disk_stream.is_open())
-            {
-                disk_stream.seekg(sector * 256 * sizeof(uint16_t));
-                disk_stream.read(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
-                std::cout << "Sector " << sector << " read into memory." << std::endl;
+        // 0xFFFE - Disk komanda (čitamo ili pišemo sa diska ili resetujemo)
+        switch (disk_command)
+        {
+        case 0: // Reset
+            reset_disk();
+            std::cout << "Disk reset executed." << std::endl;
+            break;
+        case 1: // Read
+            if (sector < disk.size() / 256)
+            { // Provjera validnog sektora
+                std::ifstream disk_stream(disk_file, std::ios::binary);
+                if (disk_stream.is_open())
+                {
+                    disk_stream.seekg(sector * 256 * sizeof(uint16_t));
+                    disk_stream.read(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
+                    std::cout << "Sector " << sector << " read into memory." << std::endl;
+                }
             }
-        }
-        else if (disk_command == 2)
-        { // Write
-            std::ofstream disk_stream(disk_file, std::ios::binary | std::ios::in);
-            if (disk_stream.is_open())
+            else
             {
-                disk_stream.seekp(sector * 256 * sizeof(uint16_t));
-                disk_stream.write(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
-                std::cout << "Memory written to sector " << sector << "." << std::endl;
+                std::cerr << "Invalid sector for read: " << sector << std::endl;
             }
+            break;
+        case 2: // Write
+            if (sector < disk.size() / 256)
+            { // Provjera validnog sektora
+                std::ofstream disk_stream(disk_file, std::ios::binary | std::ios::in);
+                if (disk_stream.is_open())
+                {
+                    disk_stream.seekp(sector * 256 * sizeof(uint16_t));
+                    disk_stream.write(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
+                    std::cout << "Memory written to sector " << sector << "." << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Invalid sector for write: " << sector << std::endl;
+            }
+            break;
+        default:
+            std::cerr << "Unknown disk command: " << disk_command << std::endl;
         }
+    }
+
+    // Funkcija za resetovanje diska
+    void reset_disk()
+    {
+        sector = 0;                      // Postavljanje sektora na početni
+        disk_command = 0;                // Poništavanje komande
+        memory.assign(memory.size(), 0); // Resetovanje memorije
+        std::cout << "Disk and memory reset completed." << std::endl;
     }
 };
 
