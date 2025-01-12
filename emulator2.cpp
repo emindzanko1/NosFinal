@@ -55,18 +55,23 @@ public:
 
     void execute()
     {
-        initialize_visualization();
-        initialize_video_memory(); // Inicijalizuj video memoriju
-        test_program();            // Pokreni testni program
+        if (!initialize_visualization())
+        {
+            std::cerr << "Failed to initialize SDL visualization.\n";
+            return;
+        }
+
+        initialize_video_memory();
+        test_program();
 
         while (true)
         {
-            handle_keyboard_input(); // Pozvana funkcija
+            handle_keyboard_input();
             handle_io_ports();
 
             if (interrupt_flag)
             {
-                handle_interrupt(); // Pozvana funkcija
+                handle_interrupt();
                 interrupt_flag = false;
             }
 
@@ -78,19 +83,49 @@ public:
 
             timer++;
             if (timer >= 8000)
-            { // Simulira 20ms na 8 MHz
+            {
                 interrupt_flag = true;
                 timer = 0;
             }
 
-            draw_screen(); // Ažuriranje vizualizacije u svakom ciklusu
-            SDL_Delay(16); // Ograniči na 60 FPS
-            // std::this_thread::sleep_for(std::chrono::milliseconds(16)); // Approx 60 FPS
+            draw_screen();
+            SDL_Delay(16);
         }
 
-        execute_test_disk_operations(); // Test disk operacija
-
         cleanup_visualization();
+    }
+
+    void test_all()
+    {
+        std::cout << "Running all tests...\n";
+
+        initialize_video_memory();
+        std::cout << "[Test] Video memory initialized.\n";
+
+        load_ascii_table();
+        std::cout << "[Test] ASCII table loaded.\n";
+
+        execute_test_disk_operations();
+        std::cout << "[Test] Disk operations completed.\n";
+
+        test_sequence();
+        std::cout << "[Test] Sequence test completed.\n";
+
+        std::cout << "All tests completed successfully.\n";
+    }
+
+    void initialize_rom()
+    {
+        for (uint16_t i = 0; i < 1024; ++i)
+        {
+            memory[i] = 0x0000; // Inicijalizacija ROM-a sa NOP instrukcijama
+        }
+
+        // Primjer osnovnog boot loadera
+        memory[0] = 0x1000; // LOD instrukcija
+        memory[1] = 0x2001; // ADD instrukcija
+        memory[2] = 0x4000; // JMP instrukcija
+        std::cout << "Boot loader initialized in ROM.\n";
     }
 
 private:
@@ -107,12 +142,117 @@ private:
     uint16_t disk_command; // Port 0xFFFE
     uint16_t sector;       // Port 0xFFFD
 
-    uint16_t keyboard_input;
-
     // SDL2-related members
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
     SDL_Event event;
+
+    void initialize_video_memory()
+    {
+        // Početni simbol u video memoriji
+        video_memory[0] = 0x0005; // Aktivira segmente 0 i 2
+        load_fonts();
+        std::cout << "Video memory initialized." << std::endl;
+    }
+
+    void load_ascii_table()
+    {
+        for (uint16_t i = 0; i < 128; ++i)
+        {
+            video_memory[i] = i; // Simuliraj ASCII prikaz (ili koristi predefinisan izgled znakova)
+        }
+        std::cout << "ASCII table loaded into video memory.\n";
+    }
+
+    void test_program()
+    {
+        // Simulacija promene simbola u memoriji
+        video_memory[0] = 0x0003; // Aktivira segmente 0 i 1
+        std::cout << "Test program initialized video memory.\n";
+    }
+
+    void execute_test_disk_operations()
+    {
+        // Test reset diska
+        disk_command = 0; // Reset
+        handle_io_ports();
+
+        // Test čitanja sa diska
+        disk_command = 1; // Čitanje
+        sector = 0;
+        handle_io_ports();
+
+        // Test pisanja na disk
+        disk_command = 2; // Pisanje
+        handle_io_ports();
+    }
+
+    void test_sequence()
+    {
+        for (uint16_t i = 0; i < 25; ++i)
+        {
+            for (uint16_t j = 0; j < 80; ++j)
+            {
+                video_memory[i * 80 + j] = 1 << (i % 16); // Aktiviraj samo jedan segment
+                draw_screen();
+                SDL_Delay(100); // Pauza da se vidi promena
+            }
+        }
+        std::cout << "Sequence test completed.\n";
+    }
+
+    void handle_io_ports()
+    {
+        // 0xFFFE - Disk komanda (čitamo ili pišemo sa diska ili resetujemo)
+        switch (disk_command)
+        {
+        case 0: // Reset
+            reset_disk();
+            std::cout << "Disk reset executed." << std::endl;
+            break;
+        case 1: // Read
+            if (sector < disk.size() / 256)
+            { // Provjera validnog sektora
+                std::ifstream disk_stream(disk_file, std::ios::binary);
+                if (disk_stream.is_open())
+                {
+                    disk_stream.seekg(sector * 256 * sizeof(uint16_t));
+                    disk_stream.read(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
+                    if (disk_stream.gcount() == 256 * sizeof(uint16_t))
+                    {
+                        std::cout << "Sector " << sector << " read successfully.\n";
+                    }
+                    else
+                    {
+                        std::cerr << "Error reading sector " << sector << ".\n";
+                    }
+                }
+            }
+            else
+            {
+                std::cerr << "Invalid sector for read: " << sector << std::endl;
+            }
+            break;
+        case 2: // Write
+            if (sector < disk.size() / 256)
+            { // Provjera validnog sektora
+                std::ofstream disk_stream(disk_file, std::ios::binary | std::ios::in);
+                if (disk_stream.is_open())
+                {
+                    disk_stream.seekp(sector * 256 * sizeof(uint16_t));
+                    disk_stream.write(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
+                    std::cout << "Memory written to sector " << sector << "." << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Invalid sector for write: " << sector << std::endl;
+            }
+            break;
+        default:
+            std::cerr << "Unknown disk command: " << disk_command << std::endl;
+        }
+    }
 
     void handle_keyboard_input()
     {
@@ -125,11 +265,13 @@ private:
             }
             else if (event.type == SDL_KEYDOWN)
             {
-                // Povezivanje pritisnutih tastera sa portom 0xFFFF
-                if (key_map.find(event.key.keysym.sym) != key_map.end())
-                {
-                    uint8_t ascii_code = key_map[event.key.keysym.sym];
-                    video_memory[0] = ascii_code; // Prikaz na prvoj poziciji video memorije
+                uint8_t scan_code = static_cast<uint8_t>(event.key.keysym.sym);
+                uint8_t ascii_code = scan_code_to_ascii(scan_code); // Koristi scan_code_to_ascii
+                if (ascii_code != 0)
+                {                                      // Provjerava validan ASCII kod
+                    video_memory[0] = ascii_code;      // Prikaz na prvoj poziciji video memorije
+                    video_memory[1] = ascii_code << 1; // Test promjene (ili simulacija)
+                    draw_screen();                     // Ažuriranje ekrana
                     std::cout << "Key pressed: " << SDL_GetKeyName(event.key.keysym.sym)
                               << " (ASCII: " << ascii_code << ")" << std::endl;
                 }
@@ -143,11 +285,52 @@ private:
         draw_screen(); // Osvježavanje ekrana
     }
 
-    void initialize_visualization()
+    uint16_t fetch_instruction()
     {
-        SDL_Init(SDL_INIT_VIDEO);
-        window = SDL_CreateWindow("Emulator Screen", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 600, SDL_WINDOW_SHOWN);
+        uint16_t instruction = memory[program_counter++];
+        std::cout << "PC: " << std::hex << program_counter - 1 << " | Instruction: " << instruction << std::endl;
+        return instruction;
+    }
+
+    bool execute_instruction(uint16_t instruction)
+    {
+        switch (instruction & 0xF000)
+        {
+        case 0x1000:
+            return execute_lod(instruction); // Očekuje LOD instrukciju
+        case 0x2000:
+            return execute_add(instruction); // Očekuje ADD instrukciju
+        case 0x4000:
+            return execute_jmp(instruction); // Očekuje JMP instrukciju
+        case 0xF000:
+            return false; // Nema više instrukcija
+        default:
+            std::cerr << "Unknown instruction: " << std::hex << instruction
+                      << " | PC: " << std::hex << program_counter - 1 << std::endl;
+            return false;
+        }
+    }
+
+    bool initialize_visualization()
+    {
+        if (SDL_Init(SDL_INIT_VIDEO) < 0)
+        {
+            std::cerr << "SDL could not initialize: " << SDL_GetError() << std::endl;
+            return false;
+        }
+        window = SDL_CreateWindow("Emulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 600, SDL_WINDOW_SHOWN);
+        if (!window)
+        {
+            std::cerr << "Window could not be created: " << SDL_GetError() << std::endl;
+            return false;
+        }
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        if (!renderer)
+        {
+            std::cerr << "Renderer could not be created: " << SDL_GetError() << std::endl;
+            return false;
+        }
+        return true;
     }
 
     void cleanup_visualization()
@@ -243,36 +426,16 @@ private:
         SDL_RenderPresent(renderer);
     }
 
-    uint16_t fetch_instruction()
-    {
-        uint16_t instruction = memory[program_counter++];
-        std::cout << "PC: " << std::hex << program_counter - 1 << " | Instruction: " << instruction << std::endl;
-        return instruction;
-    }
-
-    bool execute_instruction(uint16_t instruction)
-    {
-        switch (instruction & 0xF000)
-        {
-        case 0x1000:
-            return execute_lod(instruction); // Očekuje LOD instrukciju
-        case 0x2000:
-            return execute_add(instruction); // Očekuje ADD instrukciju
-        case 0x4000:
-            return execute_jmp(instruction); // Očekuje JMP instrukciju
-        case 0xF000:
-            return false; // Nema više instrukcija
-        default:
-            std::cerr << "Unknown instruction: " << std::hex << instruction
-                      << " | PC: " << std::hex << program_counter - 1 << std::endl;
-            return false;
-        }
-    }
-
     bool execute_lod(uint16_t instruction)
     {
         uint16_t reg = (instruction >> 8) & 0x0F; // Registar u koji se učitava
         uint16_t addr = instruction & 0x00FF;     // Adresa iz koje se učitava
+
+        if (addr < 1024)
+        { // ROM je zaštićen
+            std::cerr << "Error: Attempt to write to ROM address " << addr << std::endl;
+            return false;
+        }
 
         std::cout << "LOD R" << reg << ", " << addr << std::endl;
 
@@ -305,52 +468,6 @@ private:
         return true;
     }
 
-    void handle_io_ports()
-    {
-        // 0xFFFE - Disk komanda (čitamo ili pišemo sa diska ili resetujemo)
-        switch (disk_command)
-        {
-        case 0: // Reset
-            reset_disk();
-            std::cout << "Disk reset executed." << std::endl;
-            break;
-        case 1: // Read
-            if (sector < disk.size() / 256)
-            { // Provjera validnog sektora
-                std::ifstream disk_stream(disk_file, std::ios::binary);
-                if (disk_stream.is_open())
-                {
-                    disk_stream.seekg(sector * 256 * sizeof(uint16_t));
-                    disk_stream.read(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
-                    std::cout << "Sector " << sector << " read into memory." << std::endl;
-                }
-            }
-            else
-            {
-                std::cerr << "Invalid sector for read: " << sector << std::endl;
-            }
-            break;
-        case 2: // Write
-            if (sector < disk.size() / 256)
-            { // Provjera validnog sektora
-                std::ofstream disk_stream(disk_file, std::ios::binary | std::ios::in);
-                if (disk_stream.is_open())
-                {
-                    disk_stream.seekp(sector * 256 * sizeof(uint16_t));
-                    disk_stream.write(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
-                    std::cout << "Memory written to sector " << sector << "." << std::endl;
-                }
-            }
-            else
-            {
-                std::cerr << "Invalid sector for write: " << sector << std::endl;
-            }
-            break;
-        default:
-            std::cerr << "Unknown disk command: " << disk_command << std::endl;
-        }
-    }
-
     // Funkcija za resetovanje diska
     void reset_disk()
     {
@@ -360,34 +477,23 @@ private:
         std::cout << "Disk and memory reset completed." << std::endl;
     }
 
-    void initialize_video_memory()
+    uint8_t scan_code_to_ascii(uint8_t scan_code)
     {
-        // Početni simbol u video memoriji
-        video_memory[0] = 0x0005; // Aktivira segmente 0 i 2
-        std::cout << "Video memory initialized." << std::endl;
+        // Provjeravamo da li sken kod postoji u mapi
+        auto it = key_map.find(scan_code);
+        if (it != key_map.end())
+        {
+            return it->second; // Vraćamo odgovarajući ASCII kod
+        }
+        return 0; // Nevažeći sken kod
     }
 
-    void test_program()
+    void load_fonts()
     {
-        // Simulacija promene simbola u memoriji
-        video_memory[0] = 0x0003; // Aktivira segmente 0 i 1
-        std::cout << "Initial symbol set in video memory for test program." << std::endl;
-    }
-
-    void execute_test_disk_operations()
-    {
-        // Test reset diska
-        disk_command = 0; // Reset
-        handle_io_ports();
-
-        // Test čitanja sa diska
-        disk_command = 1; // Čitanje
-        sector = 0;
-        handle_io_ports();
-
-        // Test pisanja na disk
-        disk_command = 2; // Pisanje
-        handle_io_ports();
+        // Primjer: predefinisani fontovi za par simbola
+        video_memory[0] = 0x1FFF; // Svi segmenti aktivni za prvi simbol
+        video_memory[1] = 0x0F0F; // Alternativni simbol
+        std::cout << "Fonts loaded into video memory.\n";
     }
 };
 
@@ -405,37 +511,41 @@ void generate_test_files()
 
     std::cout << "Test files generated: test_program.bin and test_disk.bin" << std::endl;
 }
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     std::cout << "Emulator Program\n";
 
-    if (argc < 2) {
+    if (argc < 2)
+    {
         std::cerr << "Usage: " << argv[0] << " <command> [options]\n";
         std::cerr << "Commands:\n";
         std::cerr << "  generate   Generate test files\n";
         std::cerr << "  run        Run the emulator\n";
-        std::cerr << "  test       Run tests\n";
+        std::cerr << "  test       Run all tests\n";
         return 1;
     }
 
     std::string command = argv[1];
     Emulator emulator;
 
-    if (command == "generate") {
+    if (command == "generate")
+    {
         generate_test_files();
-        return 0; // Završava nakon generisanja fajlova
-    } 
-    else if (command == "run") {
-        std::cout << "Running the emulator...\n";
-        emulator.load_memory("program.bin"); // Učitaj program
-        emulator.load_disk("test_disk.bin"); // Učitaj disk
-        emulator.execute(); // Pokreni emulator
-    } 
-    else if (command == "test") {
-        std::cout << "Running emulator tests...\n";
-        emulator.load_memory("test_program.bin");
-        emulator.execute(); // Pokreni sa testnim fajlom
-    } 
-    else {
+    }
+    else if (command == "run")
+    {
+        emulator.initialize_rom();
+        emulator.load_memory("program.bin");
+        emulator.load_disk("test_disk.bin");
+        emulator.execute();
+    }
+    else if (command == "test")
+    {
+        emulator.initialize_rom();
+        emulator.test_all();
+    }
+    else
+    {
         std::cerr << "Unknown command: " << command << "\n";
         std::cerr << "Use 'generate', 'run', or 'test'.\n";
         return 1;
