@@ -1,0 +1,15 @@
+# Generisanje memory_test.bin
+memory_content = [0] * 65536  # 64KB memorije
+
+# Program: LOD R0, 10 -> ADD R0, R1 -> HALT
+memory_content[0] = 0x100A    # LOD R0, 10 (učitaj vrijednost sa adrese 10 u R0)
+memory_content[1] = 0x2001    # ADD R0, R1 (saberi R0 i R1, rezultat u R0)
+memory_content[2] = 0xF000    # HALT (zaustavi)
+
+# Podaci
+memory_content[10] = 42  # Vrijednost na adresi 10
+memory_content[1] = 8    # Vrijednost u registru R1 (treba da bude unaprijed postavljena u emulatoru)
+
+# Snimi binarnu datoteku
+with open("memory_test.bin", "wb") as f:
+    f.write(bytearray(memory_content))
