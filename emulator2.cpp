@@ -110,22 +110,6 @@ private:
     SDL_Renderer *renderer = nullptr;
     SDL_Event event;
 
-    // Dodane funkcije koje su nedostajale
-
-    // void handle_keyboard_input()
-    // {
-    //     // Ovdje možeš dodati logiku za rukovanje unosom s tastature
-    // }
-
-    // void handle_interrupt()
-    // {
-    //     // Ovdje možeš dodati logiku za rukovanje prekidima
-    // }
-
-    // void draw_keyboard()
-    // {
-    //     // Ovdje možeš dodati kod za crtanje tastature ako je potrebno
-    // }
 
     void handle_keyboard_input()
     {
@@ -154,26 +138,6 @@ private:
     {
         std::cout << "Timer interrupt!" << std::endl;
         draw_screen(); // Osvježavanje ekrana
-    }
-
-    void start_timer()
-    {
-        while (true)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            handle_interrupt();
-        }
-    }
-
-    void draw_keyboard()
-    {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-
-        for (int i = 0; i < 16; ++i)
-        {
-            SDL_Rect key_rect = {50 + i * 40, 500, 30, 30};
-            SDL_RenderFillRect(renderer, &key_rect);
-        }
     }
 
     void initialize_visualization()
