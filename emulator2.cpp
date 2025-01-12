@@ -144,9 +144,11 @@ private:
                 // Povezivanje pritisnutih tastera sa portom 0xFFFF
                 if (key_map.find(event.key.keysym.sym) != key_map.end())
                 {
-                    io_ports[0xFFFF] = key_map[event.key.keysym.sym];
+                    uint8_t ascii_code = key_map[event.key.keysym.sym];
+                    io_ports[0xFFFF] = ascii_code;
+                    video_memory[0] = ascii_code; // Prikaz na prvoj poziciji video memorije
                     std::cout << "Key pressed: " << SDL_GetKeyName(event.key.keysym.sym)
-                              << " (Port 0xFFFF value: " << std::hex << (int)io_ports[0xFFFF] << std::dec << ")" << std::endl;
+                              << " (ASCII: " << ascii_code << ")" << std::endl;
                 }
             }
         }
@@ -154,7 +156,8 @@ private:
 
     void handle_interrupt()
     {
-        std::cout << "Interrupt handled!" << std::endl;
+        std::cout << "Timer interrupt!" << std::endl;
+        draw_screen(); // Osvježavanje ekrana
     }
 
     void start_timer()
@@ -201,25 +204,79 @@ private:
             for (int col = 0; col < 80; ++col)
             {
                 uint16_t word = video_memory[row * 80 + col];
+                // Koordinate početne pozicije znaka
+                int x = col * 20; // širina znaka
+                int y = row * 40; // visina znaka
 
                 for (int segment = 0; segment < 16; ++segment)
                 {
-                    SDL_Rect rect = {col * 10 + (segment % 4) * 2, row * 20 + (segment / 4) * 4, 2, 4};
+                    // Odredi poziciju i dimenzije LED segmenta
+                    SDL_Rect segment_rect;
+                    switch (segment)
+                    {
+                    case 0:
+                        segment_rect = {x + 4, y, 12, 2};
+                        break; // Gornji horizontalni
+                    case 1:
+                        segment_rect = {x + 16, y + 2, 2, 12};
+                        break; // Gornji desni vertikalni
+                    case 2:
+                        segment_rect = {x + 16, y + 20, 2, 12};
+                        break; // Donji desni vertikalni
+                    case 3:
+                        segment_rect = {x + 4, y + 32, 12, 2};
+                        break; // Donji horizontalni
+                    case 4:
+                        segment_rect = {x, y + 20, 2, 12};
+                        break; // Donji levi vertikalni
+                    case 5:
+                        segment_rect = {x, y + 2, 2, 12};
+                        break; // Gornji levi vertikalni
+                    case 6:
+                        segment_rect = {x + 4, y + 16, 12, 2};
+                        break; // Srednji horizontalni
+                    // Dodatni segmenti za 16-segmentni prikaz
+                    case 7:
+                        segment_rect = {x + 2, y + 2, 2, 12};
+                        break; // Dijagonalni levi gornji
+                    case 8:
+                        segment_rect = {x + 14, y + 2, 2, 12};
+                        break; // Dijagonalni desni gornji
+                    case 9:
+                        segment_rect = {x + 2, y + 20, 2, 12};
+                        break; // Dijagonalni levi donji
+                    case 10:
+                        segment_rect = {x + 14, y + 20, 2, 12};
+                        break; // Dijagonalni desni donji
+                    case 11:
+                        segment_rect = {x + 6, y + 6, 8, 2};
+                        break; // Horizontalni srednji gornji
+                    case 12:
+                        segment_rect = {x + 6, y + 28, 8, 2};
+                        break; // Horizontalni srednji donji
+                    case 13:
+                        segment_rect = {x + 2, y + 14, 2, 12};
+                        break; // Vertikalni levi srednji
+                    case 14:
+                        segment_rect = {x + 16, y + 14, 2, 12};
+                        break; // Vertikalni desni srednji
+                    case 15:
+                        segment_rect = {x + 6, y + 14, 8, 2};
+                        break; // Horizontalni centralni
+                    }
+
                     if (word & (1 << segment))
                     {
-                        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Aktivna LED
+                        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Aktivni segment
                     }
                     else
                     {
-                        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255); // Neaktivna LED
+                        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255); // Neaktivni segment
                     }
-                    SDL_RenderFillRect(renderer, &rect);
+                    SDL_RenderFillRect(renderer, &segment_rect);
                 }
             }
         }
-
-        draw_keyboard(); // Pozvana funkcija
-
         SDL_RenderPresent(renderer);
     }
 
@@ -287,25 +344,25 @@ private:
 
     void handle_io_ports()
     {
-        // 0xFFFF - Tastatura (prikazivanje pritisnutih tastera)
-        if (memory[0xFFFF] != 0)
-        {
-            keyboard_input = memory[0xFFFF]; // Simulacija tastature
-            std::cout << "Keyboard input: " << keyboard_input << std::endl;
+        if (disk_command == 1)
+        { // Read
+            std::ifstream disk_stream(disk_file, std::ios::binary);
+            if (disk_stream.is_open())
+            {
+                disk_stream.seekg(sector * 256 * sizeof(uint16_t));
+                disk_stream.read(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
+                std::cout << "Sector " << sector << " read into memory." << std::endl;
+            }
         }
-
-        // 0xFFFE - Disk komanda (čitamo ili pišemo sa diska)
-        if (memory[0xFFFE] == 1)
-        {
-            // Komanda za čitanje sa diska
-            std::cout << "Read from disk, sector: " << sector << std::endl;
-            memory[0xFFFD] = disk[sector]; // Pretpostavljamo da disk sadrži 16-bitne podatke
-        }
-        else if (memory[0xFFFE] == 2)
-        {
-            // Komanda za upis na disk
-            disk[sector] = memory[0xFFFD];
-            std::cout << "Write to disk, sector: " << sector << std::endl;
+        else if (disk_command == 2)
+        { // Write
+            std::ofstream disk_stream(disk_file, std::ios::binary | std::ios::in);
+            if (disk_stream.is_open())
+            {
+                disk_stream.seekp(sector * 256 * sizeof(uint16_t));
+                disk_stream.write(reinterpret_cast<char *>(memory.data()), 256 * sizeof(uint16_t));
+                std::cout << "Memory written to sector " << sector << "." << std::endl;
+            }
         }
     }
 };
