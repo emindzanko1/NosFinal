@@ -56,6 +56,8 @@ public:
     void execute()
     {
         initialize_visualization();
+        initialize_video_memory(); // Inicijalizuj video memoriju
+        test_program();            // Pokreni testni program
 
         while (true)
         {
@@ -86,6 +88,8 @@ public:
             // std::this_thread::sleep_for(std::chrono::milliseconds(16)); // Approx 60 FPS
         }
 
+        execute_test_disk_operations(); // Test disk operacija
+
         cleanup_visualization();
     }
 
@@ -109,7 +113,6 @@ private:
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
     SDL_Event event;
-
 
     void handle_keyboard_input()
     {
@@ -356,6 +359,36 @@ private:
         memory.assign(memory.size(), 0); // Resetovanje memorije
         std::cout << "Disk and memory reset completed." << std::endl;
     }
+
+    void initialize_video_memory()
+    {
+        // Početni simbol u video memoriji
+        video_memory[0] = 0x0005; // Aktivira segmente 0 i 2
+        std::cout << "Video memory initialized." << std::endl;
+    }
+
+    void test_program()
+    {
+        // Simulacija promene simbola u memoriji
+        video_memory[0] = 0x0003; // Aktivira segmente 0 i 1
+        std::cout << "Initial symbol set in video memory for test program." << std::endl;
+    }
+
+    void execute_test_disk_operations()
+    {
+        // Test reset diska
+        disk_command = 0; // Reset
+        handle_io_ports();
+
+        // Test čitanja sa diska
+        disk_command = 1; // Čitanje
+        sector = 0;
+        handle_io_ports();
+
+        // Test pisanja na disk
+        disk_command = 2; // Pisanje
+        handle_io_ports();
+    }
 };
 
 void generate_test_files()
@@ -372,26 +405,40 @@ void generate_test_files()
 
     std::cout << "Test files generated: test_program.bin and test_disk.bin" << std::endl;
 }
-int main(int argc, char *argv[])
-{
-    std::cout << "Argumenti: ";
-    for (int i = 0; i < argc; ++i)
-    {
-        std::cout << argv[i] << " ";
-    }
-    std::cout << std::endl;
+int main(int argc, char *argv[]) {
+    std::cout << "Emulator Program\n";
 
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <command> [options]\n";
+        std::cerr << "Commands:\n";
+        std::cerr << "  generate   Generate test files\n";
+        std::cerr << "  run        Run the emulator\n";
+        std::cerr << "  test       Run tests\n";
+        return 1;
+    }
+
+    std::string command = argv[1];
     Emulator emulator;
 
-    if (argc > 1 && std::strcmp(argv[1], "generate") == 0)
-    {
+    if (command == "generate") {
         generate_test_files();
-        return 0; // Dodano: Završava program nakon generisanja fajlova
-    }
-    else
-    {
-        emulator.load_memory("program.bin");
-        emulator.execute();
+        return 0; // Završava nakon generisanja fajlova
+    } 
+    else if (command == "run") {
+        std::cout << "Running the emulator...\n";
+        emulator.load_memory("program.bin"); // Učitaj program
+        emulator.load_disk("test_disk.bin"); // Učitaj disk
+        emulator.execute(); // Pokreni emulator
+    } 
+    else if (command == "test") {
+        std::cout << "Running emulator tests...\n";
+        emulator.load_memory("test_program.bin");
+        emulator.execute(); // Pokreni sa testnim fajlom
+    } 
+    else {
+        std::cerr << "Unknown command: " << command << "\n";
+        std::cerr << "Use 'generate', 'run', or 'test'.\n";
+        return 1;
     }
 
     return 0;
